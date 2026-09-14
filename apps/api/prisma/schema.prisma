@@ -1,0 +1,650 @@
+// ============================================================
+// RESGATE AI — Prisma Schema Completo
+// PostgreSQL 16 + PostGIS extension
+// Multi-tenant (row-level isolation)
+// ============================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ── MULTIEMPRESA ─────────────────────────────────────────────────────────────
+
+model Tenant {
+  id          String   @id @default(uuid())
+  name        String
+  slug        String   @unique
+  cnpj        String?  @unique
+  plan        Plan     @default(BASIC)
+  isActive    Boolean  @default(true)
+  logoUrl     String?
+  primaryColor String? @default("#1A56DB")
+  timezone    String   @default("America/Sao_Paulo")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  users           User[]
+  vehicles        Vehicle[]
+  clients         Client[]
+  occurrences     Occurrence[]
+  priceTables     PriceTable[]
+  notifications   Notification[]
+  auditLogs       AuditLog[]
+  settings        TenantSettings?
+
+  @@map("tenants")
+}
+
+model TenantSettings {
+  id                    String  @id @default(uuid())
+  tenantId              String  @unique
+  tenant                Tenant  @relation(fields: [tenantId], references: [id])
+  defaultSlaMinutes     Int     @default(60)
+  gpsIntervalSeconds    Int     @default(5)
+  autoDispatch          Boolean @default(false)
+  requireMfa            Boolean @default(true)
+  whatsappEnabled       Boolean @default(false)
+  whatsappApiKey        String?
+  smsEnabled            Boolean @default(false)
+  smsApiKey             String?
+  maxActiveOccurrences  Int     @default(100)
+
+  @@map("tenant_settings")
+}
+
+// ── USUÁRIOS ─────────────────────────────────────────────────────────────────
+
+model User {
+  id            String    @id @default(uuid())
+  tenantId      String
+  tenant        Tenant    @relation(fields: [tenantId], references: [id])
+  email         String    @unique
+  passwordHash  String
+  name          String
+  phone         String?
+  avatarUrl     String?
+  role          Role      @default(OPERATOR)
+  mfaEnabled    Boolean   @default(false)
+  mfaSecret     String?
+  isActive      Boolean   @default(true)
+  lastLoginAt   DateTime?
+  lastLoginIp   String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  driver         Driver?
+  auditLogs      AuditLog[]
+  notifications  Notification[]
+  createdOccurrences Occurrence[] @relation("CreatedBy")
+  refreshTokens  RefreshToken[]
+
+  @@index([tenantId, role])
+  @@map("users")
+}
+
+model RefreshToken {
+  id          String   @id @default(uuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  token       String   @unique
+  deviceInfo  String?
+  ipAddress   String?
+  expiresAt   DateTime
+  revokedAt   DateTime?
+  createdAt   DateTime @default(now())
+
+  @@index([userId])
+  @@index([token])
+  @@map("refresh_tokens")
+}
+
+// ── MOTORISTAS ───────────────────────────────────────────────────────────────
+
+model Driver {
+  id             String    @id @default(uuid())
+  userId         String    @unique
+  user           User      @relation(fields: [userId], references: [id])
+  cnh            String    @unique
+  cnhCategory    String
+  cnhExpiry      DateTime
+  rating         Decimal   @default(5.0) @db.Decimal(3, 2)
+  totalServices  Int       @default(0)
+  acceptanceRate Decimal   @default(100.0) @db.Decimal(5, 2)
+  isOnline       Boolean   @default(false)
+  currentLat     Decimal?  @db.Decimal(10, 8)
+  currentLng     Decimal?  @db.Decimal(11, 8)
+  lastGpsUpdate  DateTime?
+  vehicleId      String?   @unique
+  createdAt      DateTime  @default(now())
+
+  vehicle     Vehicle?     @relation(fields: [vehicleId], references: [id])
+  occurrences Occurrence[]
+  commissions Commission[]
+  documents   DriverDocument[]
+
+  @@map("drivers")
+}
+
+model DriverDocument {
+  id         String           @id @default(uuid())
+  driverId   String
+  driver     Driver           @relation(fields: [driverId], references: [id])
+  type       DriverDocType
+  url        String
+  fileName   String
+  expiresAt  DateTime?
+  createdAt  DateTime         @default(now())
+
+  @@map("driver_documents")
+}
+
+// ── VEÍCULOS / GUINCHOS ──────────────────────────────────────────────────────
+
+model Vehicle {
+  id              String        @id @default(uuid())
+  tenantId        String
+  tenant          Tenant        @relation(fields: [tenantId], references: [id])
+  plate           String        @unique
+  model           String
+  brand           String
+  year            Int
+  color           String?
+  type            VehicleType
+  capacityTons    Decimal       @db.Decimal(6, 2)
+  status          VehicleStatus @default(OFFLINE)
+  currentLat      Decimal?      @db.Decimal(10, 8)
+  currentLng      Decimal?      @db.Decimal(11, 8)
+  lastGpsUpdate   DateTime?
+  odometer        Decimal?      @db.Decimal(10, 2)
+  isActive        Boolean       @default(true)
+  observations    String?
+  photoUrl        String?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  driver      Driver?
+  occurrences Occurrence[]
+
+  @@index([tenantId, status])
+  @@index([tenantId, status, currentLat, currentLng])
+  @@map("vehicles")
+}
+
+// ── CLIENTES ─────────────────────────────────────────────────────────────────
+
+model Client {
+  id          String     @id @default(uuid())
+  tenantId    String
+  tenant      Tenant     @relation(fields: [tenantId], references: [id])
+  type        ClientType @default(INDIVIDUAL)
+  name        String
+  email       String?
+  phone       String
+  whatsapp    String?
+  cpfCnpj     String?
+  address     String?
+  city        String?
+  state       String?
+  isActive    Boolean    @default(true)
+  notes       String?
+  // For corporate clients
+  companyName String?
+  contactName String?
+  // Portal access
+  portalEmail     String? @unique
+  portalPassHash  String?
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  occurrences Occurrence[]
+
+  @@index([tenantId])
+  @@index([phone])
+  @@map("clients")
+}
+
+// ── OCORRÊNCIAS (ENTIDADE CENTRAL) ───────────────────────────────────────────
+
+model Occurrence {
+  id                  String            @id @default(uuid())
+  tenantId            String
+  tenant              Tenant            @relation(fields: [tenantId], references: [id])
+  protocol            String            @unique
+  status              OccurrenceStatus  @default(OPEN)
+  priority            Priority          @default(NORMAL)
+
+  // Partes
+  clientId            String
+  client              Client            @relation(fields: [clientId], references: [id])
+  driverId            String?
+  driver              Driver?           @relation(fields: [driverId], references: [id])
+  vehicleId           String?
+  vehicle             Vehicle?          @relation(fields: [vehicleId], references: [id])
+
+  // Localização
+  originAddress       String
+  originLat           Decimal           @db.Decimal(10, 8)
+  originLng           Decimal           @db.Decimal(11, 8)
+  destinationAddress  String?
+  destinationLat      Decimal?          @db.Decimal(10, 8)
+  destinationLng      Decimal?          @db.Decimal(11, 8)
+
+  // Veículo do cliente
+  clientVehiclePlate  String
+  clientVehicleModel  String?
+  clientVehicleType   ClientVehicleType
+
+  // Tipo de problema
+  problemType         ProblemType
+  problemDescription  String?
+
+  // Timing
+  estimatedArrival    DateTime?
+  actualArrival       DateTime?
+  serviceStartedAt    DateTime?
+  completedAt         DateTime?
+  cancelledAt         DateTime?
+  cancelReason        String?
+
+  // Financeiro
+  priceTableId        String?
+  totalKm             Decimal?          @db.Decimal(8, 2)
+  basePrice           Decimal?          @db.Decimal(10, 2)
+  kmPrice             Decimal?          @db.Decimal(10, 2)
+  tollPrice           Decimal?          @db.Decimal(10, 2)
+  extraCharges        Decimal?          @db.Decimal(10, 2)
+  discount            Decimal?          @db.Decimal(10, 2)
+  totalPrice          Decimal?          @db.Decimal(10, 2)
+
+  // SLA
+  slaMinutes          Int?
+  slaMet              Boolean?
+
+  // Audit
+  createdById         String
+  createdBy           User              @relation("CreatedBy", fields: [createdById], references: [id])
+  dispatchedAt        DateTime?
+  notes               String?
+
+  // Assinatura do cliente
+  signatureUrl        String?
+  signedAt            DateTime?
+
+  // Avaliação
+  clientRating        Int?
+  clientFeedback      String?
+
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+
+  route               Route?
+  invoice             Invoice?
+  documents           Document[]
+  statusHistory       OccurrenceStatusHistory[]
+
+  @@index([tenantId, status, createdAt])
+  @@index([tenantId, createdAt])
+  @@index([driverId, status])
+  @@index([clientId])
+  @@map("occurrences")
+}
+
+model OccurrenceStatusHistory {
+  id           String           @id @default(uuid())
+  occurrenceId String
+  occurrence   Occurrence       @relation(fields: [occurrenceId], references: [id])
+  fromStatus   OccurrenceStatus?
+  toStatus     OccurrenceStatus
+  changedById  String
+  reason       String?
+  createdAt    DateTime         @default(now())
+
+  @@index([occurrenceId, createdAt])
+  @@map("occurrence_status_history")
+}
+
+// ── ROTAS E GPS ──────────────────────────────────────────────────────────────
+
+model Route {
+  id           String     @id @default(uuid())
+  occurrenceId String     @unique
+  occurrence   Occurrence @relation(fields: [occurrenceId], references: [id])
+  totalKm      Decimal?   @db.Decimal(8, 2)
+  totalMinutes Int?
+  startedAt    DateTime?
+  endedAt      DateTime?
+  gpsPoints    GpsPoint[]
+
+  @@map("routes")
+}
+
+model GpsPoint {
+  id         String   @id @default(uuid())
+  routeId    String
+  route      Route    @relation(fields: [routeId], references: [id])
+  lat        Decimal  @db.Decimal(10, 8)
+  lng        Decimal  @db.Decimal(11, 8)
+  speed      Decimal? @db.Decimal(6, 2)
+  heading    Decimal? @db.Decimal(5, 2)
+  accuracy   Decimal? @db.Decimal(8, 2)
+  altitude   Decimal? @db.Decimal(8, 2)
+  recordedAt DateTime
+
+  @@index([routeId, recordedAt(sort: Desc)])
+  @@map("gps_points")
+}
+
+// ── TABELA DE PREÇOS ─────────────────────────────────────────────────────────
+
+model PriceTable {
+  id        String      @id @default(uuid())
+  tenantId  String
+  tenant    Tenant      @relation(fields: [tenantId], references: [id])
+  name      String
+  region    String?
+  isDefault Boolean     @default(false)
+  isActive  Boolean     @default(true)
+  createdAt DateTime    @default(now())
+  rules     PriceRule[]
+
+  @@map("price_tables")
+}
+
+model PriceRule {
+  id              String            @id @default(uuid())
+  priceTableId    String
+  priceTable      PriceTable        @relation(fields: [priceTableId], references: [id])
+  serviceType     ServiceType
+  vehicleType     ClientVehicleType
+  basePrice       Decimal           @db.Decimal(10, 2)
+  pricePerKm      Decimal           @db.Decimal(8, 2)
+  freeKm          Int               @default(0)
+  tollMarkup      Decimal           @default(0) @db.Decimal(5, 2)
+  tollIncluded    Boolean           @default(false)
+  hourlyWaitPrice Decimal?          @db.Decimal(10, 2)
+  overnightFee    Decimal?          @db.Decimal(10, 2)
+  minPrice        Decimal           @db.Decimal(10, 2)
+  maxPrice        Decimal?          @db.Decimal(10, 2)
+
+  @@unique([priceTableId, serviceType, vehicleType])
+  @@map("price_rules")
+}
+
+// ── FINANCEIRO ───────────────────────────────────────────────────────────────
+
+model Invoice {
+  id           String        @id @default(uuid())
+  tenantId     String
+  occurrenceId String        @unique
+  occurrence   Occurrence    @relation(fields: [occurrenceId], references: [id])
+  number       String        @unique
+  clientName   String
+  clientCpfCnpj String?
+  subtotal     Decimal       @db.Decimal(10, 2)
+  taxes        Decimal       @default(0) @db.Decimal(10, 2)
+  discount     Decimal       @default(0) @db.Decimal(10, 2)
+  total        Decimal       @db.Decimal(10, 2)
+  status       InvoiceStatus @default(PENDING)
+  dueDate      DateTime?
+  paidAt       DateTime?
+  pdfUrl       String?
+  notes        String?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  payments     Payment[]
+
+  @@index([tenantId, status, dueDate])
+  @@map("invoices")
+}
+
+model Payment {
+  id          String        @id @default(uuid())
+  invoiceId   String
+  invoice     Invoice       @relation(fields: [invoiceId], references: [id])
+  method      PaymentMethod
+  amount      Decimal       @db.Decimal(10, 2)
+  reference   String?
+  gatewayId   String?
+  notes       String?
+  paidAt      DateTime      @default(now())
+
+  @@map("payments")
+}
+
+model Commission {
+  id           String     @id @default(uuid())
+  tenantId     String
+  driverId     String
+  driver       Driver     @relation(fields: [driverId], references: [id])
+  occurrenceId String
+  baseAmount   Decimal    @db.Decimal(10, 2)
+  percentage   Decimal    @db.Decimal(5, 2)
+  amount       Decimal    @db.Decimal(10, 2)
+  isPaid       Boolean    @default(false)
+  paidAt       DateTime?
+  batchId      String?
+  createdAt    DateTime   @default(now())
+
+  @@index([driverId, isPaid])
+  @@index([tenantId, isPaid])
+  @@map("commissions")
+}
+
+// ── DOCUMENTOS ───────────────────────────────────────────────────────────────
+
+model Document {
+  id           String       @id @default(uuid())
+  tenantId     String
+  occurrenceId String
+  occurrence   Occurrence   @relation(fields: [occurrenceId], references: [id])
+  type         DocumentType
+  url          String
+  fileName     String
+  mimeType     String?
+  sizeBytes    Int?
+  uploadedById String?
+  createdAt    DateTime     @default(now())
+
+  @@map("documents")
+}
+
+// ── NOTIFICAÇÕES ─────────────────────────────────────────────────────────────
+
+model Notification {
+  id         String             @id @default(uuid())
+  tenantId   String
+  tenant     Tenant             @relation(fields: [tenantId], references: [id])
+  userId     String?
+  user       User?              @relation(fields: [userId], references: [id])
+  channel    NotificationChannel
+  type       String
+  title      String
+  body       String
+  data       Json?
+  status     NotificationStatus @default(PENDING)
+  sentAt     DateTime?
+  readAt     DateTime?
+  errorMsg   String?
+  createdAt  DateTime           @default(now())
+
+  @@index([tenantId, userId, createdAt])
+  @@map("notifications")
+}
+
+// ── AUDITORIA (LGPD) ─────────────────────────────────────────────────────────
+
+model AuditLog {
+  id          String   @id @default(uuid())
+  tenantId    String
+  tenant      Tenant   @relation(fields: [tenantId], references: [id])
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  action      String   // CREATE | READ | UPDATE | DELETE | EXPORT | LOGIN | LOGOUT
+  entityType  String   // occurrences | clients | users | financial | etc.
+  entityId    String
+  ipAddress   String?
+  userAgent   String?
+  before      Json?
+  after       Json?
+  createdAt   DateTime @default(now())
+
+  @@index([tenantId, entityType, entityId, createdAt])
+  @@index([tenantId, userId, createdAt])
+  @@map("audit_logs")
+}
+
+// ── ENUMS ────────────────────────────────────────────────────────────────────
+
+enum Plan {
+  BASIC
+  PROFESSIONAL
+  ENTERPRISE
+}
+
+enum Role {
+  ADMIN
+  MANAGER
+  OPERATOR
+  FINANCIAL
+  DRIVER
+  CLIENT_CORP
+  CLIENT_IND
+}
+
+enum VehicleType {
+  LIGHT      // Guincho leve (até 2 ton)
+  MEDIUM     // Guincho médio (até 5 ton)
+  HEAVY      // Guincho pesado (5-15 ton)
+  FLATBED    // Plataforma
+  MOTORCYCLE // Moto socorro
+}
+
+enum VehicleStatus {
+  AVAILABLE    // Verde — disponível para chamados
+  ON_WAY       // Amarelo — em deslocamento para cliente
+  IN_SERVICE   // Vermelho — em atendimento
+  RETURNING    // Amarelo — retornando à base
+  OFFLINE      // Cinza — fora de serviço/desligado
+  MAINTENANCE  // Cinza — em manutenção
+}
+
+enum ClientType {
+  INDIVIDUAL
+  CORPORATE
+}
+
+enum ClientVehicleType {
+  MOTO
+  CARRO
+  UTILITARIO
+  CAMINHAO
+  ONIBUS
+  ESPECIAL
+}
+
+enum OccurrenceStatus {
+  OPEN             // Aberto — aguardando despacho
+  DISPATCHING      // Em despacho — buscando motorista
+  DRIVER_ASSIGNED  // Motorista acionado — aguardando aceite
+  EN_ROUTE         // Em deslocamento — indo ao cliente
+  ARRIVED          // Chegou — iniciando checklist
+  IN_SERVICE       // Em atendimento
+  DONE             // Finalizado com sucesso
+  CANCELLED        // Cancelado
+}
+
+enum Priority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+}
+
+enum ProblemType {
+  FLAT_TIRE      // Pane seca
+  DRY_FUEL       // Falta de combustível
+  ELECTRICAL     // Pane elétrica
+  OVERHEATING    // Superaquecimento
+  ACCIDENT       // Acidente — precisa de remoção
+  LOCKOUT        // Chave trancada no carro
+  BATTERY        // Bateria descarregada
+  TOWING_LIGHT   // Guincho leve
+  TOWING_HEAVY   // Guincho pesado
+  SPECIAL        // Remoção especial
+  OTHER          // Outros
+}
+
+enum ServiceType {
+  FLAT_TIRE
+  DRY_FUEL
+  ELECTRICAL
+  BATTERY
+  LOCKOUT
+  TOWING_LIGHT
+  TOWING_HEAVY
+  FLATBED
+  SPECIAL
+  OVERNIGHT
+}
+
+enum InvoiceStatus {
+  PENDING
+  SENT
+  PAID
+  OVERDUE
+  DISPUTED
+  CANCELLED
+}
+
+enum PaymentMethod {
+  CASH
+  CREDIT_CARD
+  DEBIT_CARD
+  PIX
+  BOLETO
+  INVOICE       // Faturamento mensal (corporativo)
+  TRANSFER
+}
+
+enum DocumentType {
+  SERVICE_ORDER     // Ordem de Serviço
+  RECEIPT           // Recibo
+  PROOF             // Comprovante
+  INVOICE_PDF       // Fatura PDF
+  PHOTO_BEFORE      // Foto antes do atendimento
+  PHOTO_AFTER       // Foto após atendimento
+  SIGNATURE         // Assinatura digital
+  CLIENT_VEHICLE_DOC // Documento do veículo do cliente
+  REPORT            // Relatório exportado
+}
+
+enum DriverDocType {
+  CNH
+  CPF
+  PROOF_OF_ADDRESS
+  VEHICLE_CRLV
+  VEHICLE_INSURANCE
+  BACKGROUND_CHECK
+}
+
+enum NotificationChannel {
+  PUSH_MOBILE
+  PUSH_WEB
+  EMAIL
+  SMS
+  WHATSAPP
+  TELEGRAM
+}
+
+enum NotificationStatus {
+  PENDING
+  SENT
+  DELIVERED
+  READ
+  FAILED
+}

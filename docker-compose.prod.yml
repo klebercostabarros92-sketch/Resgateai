@@ -1,0 +1,101 @@
+# ============================================================
+# RESGATE AI — Docker Compose (Produção)
+# Uso: docker compose -f docker-compose.prod.yml up -d
+# ============================================================
+
+version: "3.9"
+
+networks:
+  resgate-network:
+    driver: bridge
+
+volumes:
+  postgres-data:
+  redis-data:
+  rabbitmq-data:
+
+services:
+
+  # ── NGINX (Reverse Proxy + SSL) ──────────────────────────────
+  nginx:
+    image: nginx:1.25-alpine
+    container_name: resgate-nginx
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./infra/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./infra/nginx/ssl:/etc/nginx/ssl:ro
+    depends_on:
+      - api
+      - web
+    networks:
+      - resgate-network
+
+  # ── API (NestJS) ─────────────────────────────────────────────
+  api:
+    build:
+      context: ./apps/api
+      dockerfile: Dockerfile
+      target: production
+    container_name: resgate-api
+    restart: always
+    env_file: .env
+    deploy:
+      replicas: 3
+      resources:
+        limits:
+          cpus: "1"
+          memory: 512M
+      restart_policy:
+        condition: on-failure
+        max_attempts: 3
+    networks:
+      - resgate-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # ── Web (Next.js) ─────────────────────────────────────────────
+  web:
+    build:
+      context: ./apps/web
+      dockerfile: Dockerfile
+      target: production
+    container_name: resgate-web
+    restart: always
+    env_file: .env
+    networks:
+      - resgate-network
+
+  # ── Socket Worker ─────────────────────────────────────────────
+  socket:
+    build:
+      context: ./apps/api
+      dockerfile: Dockerfile
+      target: production
+    container_name: resgate-socket
+    restart: always
+    env_file: .env
+    environment:
+      APP_MODE: socket
+    networks:
+      - resgate-network
+
+  # ── Queue Worker ──────────────────────────────────────────────
+  worker:
+    build:
+      context: ./apps/api
+      dockerfile: Dockerfile
+      target: production
+    container_name: resgate-worker
+    restart: always
+    env_file: .env
+    environment:
+      APP_MODE: worker
+    networks:
+      - resgate-network
