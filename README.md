@@ -182,6 +182,37 @@ Onde:
 
 ---
 
+## 🖥️ Módulos de Gestão Operacional (PC / Desktop)
+
+Projetado para operadores, gestores de frota e controllers financeiros, o sistema desktop conta com módulos robustos e especializados:
+
+<p align="center">
+  <img src="./assets/fleet-financial-preview.jpg" alt="Resgate AI Fleet and Financial Management" width="100%" style="border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.3);" />
+</p>
+
+### 1. 🚛 Gestão de Frota & Implementos (`/vehicles`)
+* **Telemetria de Carga & Implementos**: Suporte a guinchos `Plataforma Hidráulica`, `Asa Delta`, `Linha Pesada 8x2` e guindastes `Munck`.
+* **Tags Operacionais**: Filtros instantâneos por `DISPONÍVEL`, `EM DESLOCAMENTO`, `EM ATENDIMENTO`, `MANUTENÇÃO PREVENTIVA` e `OFFLINE`.
+* **Controle de Desgaste & Odômetro**: Alertas automáticos para troca de óleo, pastilhas e inspeção de cabos de aço por quilometragem.
+
+### 2. 💰 Gestão Financeira & Comissionamento (`/financial`)
+* **DRE Operacional & Lucratividade**: Visualização clara de faturamento bruto vs. repasses de comissão vs. margem líquida da central.
+* **Tabelas de Preço Parametrizáveis**: Regras distintas para chamados particulares, rodovias pedagiadas e apólices de seguradoras parceiras (Porto Seguro, Bradesco, Allianz, Tokio Marine, Azul).
+* **Tags Financeiras**: Rastreamento de lotes por `RECEBIDO / PIX`, `FATURADO 30 DIAS`, `EM PROCESSAMENTO` e `PENDENTE DE CONCILIAÇÃO`.
+* **Fechamento Automático de Motoristas**: Cálculo quinzenal com base na taxa de serviço (40%) + bônus de cumprimento de SLA.
+
+### 3. 👨‍✈️ Gestão de Motoristas & Qualificação (`/drivers`)
+* **Auditoria de CNH & Especializações**: Validação de categorias (D, E), curso de condutores de emergência e certificação MOPP com alertas preventivos de vencimento.
+* **Score & Reputação**: Métricas de pontualidade, avaliações dos clientes (estrelas 1-5) e taxa de aceite de chamados.
+* **Comunicação Direta**: Integração 1-clique para contato via WhatsApp oficial da central.
+
+### 4. ⚡ Central de Despacho com IA (`/dispatch`)
+* **Fila de Triagem em Tempo Real**: Classificação visual por prioridade (`EMERGÊNCIA CRÍTICA`, `ALTA PRIORIDADE`, `NORMAL`).
+* **Ranking Preditivo de Guinchos**: Exibição dos 3 guinchos ideais calculando tempo de trânsito em minutos e distância métrica antes de confirmar a ordem de serviço.
+* **Modo Auto-Dispatch**: Alocação autônoma via inteligência artificial para sinistros que exigem resposta imediata de socorro.
+
+---
+
 ## 📱 Visão Mobile & Motorista
 
 A plataforma foi desenhada *Mobile-First* para suportar tanto os operadores na central quanto os motoristas e prestadores em campo:
